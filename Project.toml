@@ -1,0 +1,13 @@
+name = "SimpleSATSolver"
+uuid = "6385db5a-284d-4132-9acb-13e10b1cce04"
+authors = ["David P. Sanders <dpsanders@gmail.com> and contributors"]
+version = "0.1.0"
+
+[compat]
+julia = "1"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
