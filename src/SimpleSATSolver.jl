@@ -138,14 +138,19 @@ function assign!(p, assignments, literal, level; debug=false)
 
     status, assignments = check_clauses(p, variable, assignments, level; debug=debug)
         
-    if status == :unsat 
-        unassign!(assignments, variable)
+    if !(status == :unsat)
+        status, assignments = raw_solve(p, assignments, level+1, debug=debug)
+        
+        if status == :sat 
+            return status, assignments
+        end 
+    end
 
-        if debug
+    unassign!(assignments, variable)
+
+    if debug
             indent(level)
             println("Deassigned $variable")
-        end
-
     end
 
 function check_clause(p, assignments, clause, level; kw...)
@@ -240,49 +245,50 @@ function raw_solve(p, assignments, level=1; kw...)
 
     # variable = level
 
-    # status, assignments = assign!(p, assignments, make_literal(variable, 1), level; debug=debug)
+    status, assignments = assign!(p, assignments, make_literal(variable, 1), level; debug=debug)
 
-    assignments[variable] = 1
+    # assignments[variable] = 1
 
-    if debug
-        indent(level)
-        println("Assigning $variable=true")
-        indent(level)
-        @show assignments
-    end
+    # if debug
+    #     indent(level)
+    #     println("Assigning $variable=true")
+    #     indent(level)
+    #     @show assignments
+    # end
     
 
     status, assignments = check_clauses(p, variable, assignments, level; kw...)
 
     if !(status == :unsat)
-        status1, assignments1 = raw_solve(p, assignments, level+1; kw...)
+        status, assignments = raw_solve(p, assignments, level+1; kw...)
         
-        if status1 == :sat 
-            return status1, assignments1 
+        if status == :sat 
+            return status, assignments
         end 
     end
 
-    # status, assignments = assign!(p, assignments, make_literal(variable, 0), level; debug=debug)
+    
+    
+    status, assignments = assign!(p, assignments, make_literal(variable, 0), level; debug=debug)
 
 
+    # assignments[variable] = 0
 
-    assignments[variable] = 0
-
-    if debug
-        indent(level)
-        println("Assigning $variable=false")
-        indent(level)
-        @show assignments
-    end
+    # if debug
+    #     indent(level)
+    #     println("Assigning $variable=false")
+    #     indent(level)
+    #     @show assignments
+    # end
 
 
     status, assignments = check_clauses(p, variable, assignments, level; kw...)
 
     if !(status == :unsat)
-        status2, assignments2 = raw_solve(p, assignments, level+1; kw...)
+        status, assignments = raw_solve(p, assignments, level+1; kw...)
         
-        if status2 == :sat 
-            return status2, assignments2
+        if status == :sat 
+            return status, assignments
         end 
     end
 
