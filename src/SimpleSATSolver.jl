@@ -90,7 +90,7 @@ num_assigned(assignments) = count(>=(0), assignments)
 
 function unassign!(assignments, variable)
 
-    println("Unassigning variable $variable")
+    # println("Unassigning variable $variable")
 
 
     assignments[variable] = -1
@@ -98,7 +98,7 @@ function unassign!(assignments, variable)
     # undo all inferred assignments from unit prop:
     while true
         action = pop!(actions)
-        @show action
+        # @show action
 
         if value(action.literal) == variable
             break 
@@ -216,11 +216,6 @@ function check_clause(p, assignments, clause, level; kw...)
         status, assignments = assign!(p, assignments, literal, level; debug=debug, type=:unit_prop)
 
         if status == :unsat 
-            indent(level)
-            println("HERE: Unassigning $literal")
-            unassign!(assignments, value(literal))
-            indent(level)
-            print("Assignments now $assignments")
             return status, assignments
         end
     end
