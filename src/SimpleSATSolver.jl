@@ -113,6 +113,21 @@ function check_clause(p, assignments, clause, level; debug=false)
     return :sat, assignments
 end
 
+function check_clauses(p, variable, assignments, level; debug=false)
+    for clause_number in p.clause_list[variable]
+        clause = p.clauses[clause_number]
+
+        status, assignments = check_clause(p, assignments, clause, level; debug=debug)
+
+        if status == :unsat 
+            return :unsat, assignments 
+        end
+
+    end
+
+    return :sat, assignments 
+end
+
 """Solve a problem with the given starting assignments
 Starting_clause indicates which clauses have already been processed.
 """
@@ -134,50 +149,32 @@ function raw_solve(p, assignments, level=1; debug=false)
 
     # variable = level
 
-   
-    for truthiness in (true, false)
+    assignments[variable] = true
 
-        status = :sat 
+    status, assignments = check_clauses(p, variable, assignments, level; debug=debug)
 
-        assignments[variable] = truthiness
-
-        if debug
-            indent(level) 
-            println("Assigning variable $variable to $truthiness")
-            indent(level)
-            @show assignments
-        end
-    
-
-        for clause_number in p.clause_list[variable]
-            clause = p.clauses[clause_number]
-
-            status, assignments = check_clause(p, assignments, clause, level; debug=debug)
-
-            if status == :unsat 
-                break 
-            end
-
-        end
-
-        if status == :unsat
-            continue  # try other value
-        end
-
+    if !(status == :unsat)
+        status1, assignments1 = raw_solve(p, assignments, level+1, debug=debug)
         
-        (status, assignments) = raw_solve(p, assignments, level+1; debug=debug)
-            
-        return status, assignments
-        # if unsat, try again with the other value for the variable
-
+        if status1 == :sat 
+            return status1, assignments1 
+        end 
     end
 
-    # if status == :unsat 
-    #     assignments[variable] = -1  # unassign
-    #     return :unsat, assignments 
-    # end 
 
-    # status, assignments = raw_solve(p, assignments, level + 1; debug=debug)
+    assignments[variable] = false
+
+    status, assignments = check_clauses(p, variable, assignments, level; debug=debug)
+
+    if !(status == :unsat)
+        status2, assignments2 = raw_solve(p, assignments, level+1, debug=debug)
+        
+        if status2 == :sat 
+            return status2, assignments2
+        end 
+    end
+
+    assignments[variable] = -1 
 
     return :unsat, assignments 
 end
