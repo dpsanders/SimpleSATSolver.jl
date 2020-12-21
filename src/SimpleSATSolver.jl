@@ -11,10 +11,10 @@ struct SATProblem
     clauses::Vector{Vector{Int}} 
 end
 
-max_var(clause) = maximum(abs.(clause))
+max_var(clause) = maximum(abs, clause)
 
 function SATProblem(clauses::Vector{Vector{Int}})
-    num_variables = maximum(max_var.(clauses))
+    num_variables = maximum(max_var, clauses)
 
     return SATProblem(num_variables, sort(clauses, by=x->length(x)))
 end
@@ -24,7 +24,7 @@ function solve(p::SATProblem; debug=false)
     status, results = raw_solve(p, fill(-1, p.num_variables), debug=debug)
 
     if status == :unsat
-        return :unsat, nothing
+        return :unsat, Int[]
     end
 
     return :sat, [results[i] > 0 ? i : -i for i in 1:length(results)]
@@ -75,7 +75,6 @@ indent(level) = print(" " ^ level)
 Starting_clause indicates which clauses have already been processed.
 """
 function raw_solve(p, assignments, starting_clause=1, level=1; debug=false)
-    solution = copy(assignments)
     
     if debug
         println()
@@ -85,7 +84,7 @@ function raw_solve(p, assignments, starting_clause=1, level=1; debug=false)
 
     # Choose next variable from shortest clause
 
-    for clause in p.clauses[starting_clause:end]
+    for clause in @view p.clauses[starting_clause:end]
 
         if debug
             indent(level)
@@ -138,11 +137,15 @@ function raw_solve(p, assignments, starting_clause=1, level=1; debug=false)
 
         # If here then neither value of the current variable is satisfiable
         assignments[variable] = -1  # unassign
-        return :unsat, missing 
+        return :unsat, assignments
     end
 
     return :sat, assignments
 
 end
 
+
 end
+
+
+
