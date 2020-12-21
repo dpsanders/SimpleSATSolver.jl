@@ -89,8 +89,25 @@ is_unassigned(assignments, i) = assignments[i] < 0
 num_assigned(assignments) = count(>=(0), assignments)
 
 function unassign!(assignments, variable)
+
+    println("Unassigning variable $variable")
+
+
     assignments[variable] = -1
-    pop!(actions)
+
+    # undo all inferred assignments from unit prop:
+    while true
+        action = pop!(actions)
+        @show action
+
+        if value(action.literal) == variable
+            break 
+        end
+
+        if action.type == :unit_prop 
+            assignments[value(action.literal)] = -1
+        end
+    end
 end
 
 make_literal(variable, truthiness) = truthiness == 1 ? variable : -variable
@@ -140,11 +157,12 @@ the current set of assignments
 indent(level) = print(" " ^ level)
 indent(level, s) = (indent(level); println(s))
 
-function assign!(p, assignments, literal, level; debug=false)
+function assign!(p, assignments, literal, level; debug=false, type=:assign)
     variable = value(literal)
     assignments[variable] = truth_value(literal)
 
-    push!(actions, Action(:assign, literal))
+
+    push!(actions, Action(type, literal))
 
     if debug
         indent(level)
@@ -188,24 +206,24 @@ function check_clause(p, assignments, clause, level; kw...)
         return :unsat, assignments 
     end 
 
-    # if status == :unassigned 
+    if status == :unassigned 
 
-    #     if debug 
-    #         indent(level)
-    #         println("Unit propagation found $literal")
-    #     end
+        if debug 
+            indent(level)
+            println("Unit propagation found $literal")
+        end
 
-    #     status, assignments = assign!(p, assignments, literal, level; debug=debug)
+        status, assignments = assign!(p, assignments, literal, level; debug=debug, type=:unit_prop)
 
-    #     if status == :unsat 
-    #         indent(level)
-    #         println("HERE: Unassigning $literal")
-    #         unassign!(assignments, value(literal))
-    #         indent(level)
-    #         print("Assignments now $assignments")
-    #         return status, assignments
-    #     end
-    # end
+        if status == :unsat 
+            indent(level)
+            println("HERE: Unassigning $literal")
+            unassign!(assignments, value(literal))
+            indent(level)
+            print("Assignments now $assignments")
+            return status, assignments
+        end
+    end
 
     return :sat, assignments
 end
