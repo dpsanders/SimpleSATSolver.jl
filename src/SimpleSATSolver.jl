@@ -16,7 +16,11 @@ struct Action
     literal::Int 
 end
 
+Base.show(io::IO, a::Action) = print(io, "$(a.type) $(a.literal)")
+
 const actions = Action[]
+
+
 
 
 
@@ -55,11 +59,19 @@ function list_clauses(num_variables, clauses::Vector{Vector{Int}})
 end
 
 
+<<<<<<< HEAD
 solve(p::SATProblem, solver::SimpleSAT; kw...) = 
     solve(StructuredSATProblem(p), solver; kw...)
 
 function solve(p::StructuredSATProblem, solver::SimpleSAT; kw...)
     status, results = raw_solve(p, fill(-1, p.num_variables); kw...)
+=======
+function solve(p::SATProblem; debug=false)
+
+    empty!(actions)
+
+    status, results = raw_solve(p, fill(-1, p.num_variables), debug=debug)
+>>>>>>> Trace actions
 
     if status == :unsat
         return :unsat, Int[]
@@ -76,7 +88,10 @@ is_unassigned(assignments, i) = assignments[i] < 0
 
 num_assigned(assignments) = count(>=(0), assignments)
 
-unassign!(assignments, variable) = assignments[variable] = -1
+function unassign!(assignments, variable)
+    assignments[variable] = -1
+    pop!(actions)
+end
 
 make_literal(variable, truthiness) = truthiness == 1 ? variable : -variable
 """
@@ -129,9 +144,11 @@ function assign!(p, assignments, literal, level; debug=false)
     variable = value(literal)
     assignments[variable] = truth_value(literal)
 
+    push!(actions, Action(:assign, literal))
+
     if debug
         indent(level)
-        println("Forcing $literal")
+        println("Assigning $literal")
         indent(level)
         @show assignments
     end
@@ -233,6 +250,8 @@ function raw_solve(p, assignments, level=1; kw...)
         println("Entering raw_solve")
         indent(level)
         @show count(>=(0), assignments), assignments
+        indent(level)
+        @show actions
     end
 
 
@@ -243,21 +262,8 @@ function raw_solve(p, assignments, level=1; kw...)
     
     variable = findfirst(<(0), assignments)  # choose next unassigned variable
 
-    # variable = level
 
-    status, assignments = assign!(p, assignments, make_literal(variable, 1), level; debug=debug)
-
-    # assignments[variable] = 1
-
-    # if debug
-    #     indent(level)
-    #     println("Assigning $variable=true")
-    #     indent(level)
-    #     @show assignments
-    # end
-    
-
-    status, assignments = check_clauses(p, variable, assignments, level; kw...)
+    status, assignments = assign!(p, assignments, make_literal(variable, 1), level; kw...)
 
     if !(status == :unsat)
         status, assignments = raw_solve(p, assignments, level+1; kw...)
@@ -267,12 +273,10 @@ function raw_solve(p, assignments, level=1; kw...)
         end 
     end
 
-    
-    
-    status, assignments = assign!(p, assignments, make_literal(variable, 0), level; debug=debug)
+    if status == :sat 
+        return status, assignments
+    end
 
-
-    # assignments[variable] = 0
 
     # if debug
     #     indent(level)
@@ -282,7 +286,7 @@ function raw_solve(p, assignments, level=1; kw...)
     # end
 
 
-    status, assignments = check_clauses(p, variable, assignments, level; kw...)
+    status, assignments = assign!(p, assignments, make_literal(variable, 0), level; kw...)
 
     if !(status == :unsat)
         status, assignments = raw_solve(p, assignments, level+1; kw...)
@@ -293,7 +297,7 @@ function raw_solve(p, assignments, level=1; kw...)
     end
 
     
-    unassign!(assignments, variable)
+    # unassign!(assignments, variable)
 
     return :unsat, assignments 
 end
