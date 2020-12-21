@@ -6,17 +6,37 @@ export SATProblem, solve
 
 # TODO: Unit propagation
 
+"""Boolean satisfiability problem in CNF form.
+`contains[i]` is a list of the clauses containing variable `i`.
+"""
 struct SATProblem
     num_variables::Int
     clauses::Vector{Vector{Int}} 
+    clause_list::Vector{Vector{Int}}
 end
 
 max_var(clause) = maximum(abs, clause)
 
 function SATProblem(clauses::Vector{Vector{Int}})
     num_variables = maximum(max_var, clauses)
+    
+    clauses = sort(clauses, by=length)
+    clause_list = list_clauses(num_variables, clauses)
 
-    return SATProblem(num_variables, sort(clauses, by=x->length(x)))
+    return SATProblem(num_variables, clauses, clause_list)
+end
+
+"Which clauses contain each variable"
+function list_clauses(num_variables, clauses::Vector{Vector{Int}})
+    clause_list = [Int[] for i in 1:num_variables]
+
+    for (i, clause) in enumerate(clauses)
+        for literal in clause 
+            push!(clause_list[value(literal)], i)
+        end
+    end
+
+    return clause_list
 end
 
 
@@ -37,12 +57,12 @@ value(literal) = abs(literal)
 is_unassigned(assignments, i) = assignments[i] < 0
 
 """
-Find next unassigned variable in a clause
+Process a clause to check sat or find next unassigned variable
 `assignments` has -1 if unassigned, 0 or 1 if assigned and false/true respectively
 
 Clause looks like [1, 3, -25]
 """
-function find_assignment(clause, assignments)
+function process(clause, assignments)
     for literal in clause
         
         variable = value(literal)  # which variable number
@@ -71,81 +91,95 @@ the current set of assignments
 
 indent(level) = print(" " ^ level)
 
+
+function check_clause(p, assignments, clause, level; debug=false)
+
+    if debug
+        indent(level)
+        @show clause
+    end
+
+    status, literal = process(clause, assignments)
+
+    if status == :unsat
+        if debug 
+            indent(level)
+            println("Clause $clause unsat")
+        end
+                
+        return :unsat, assignments 
+    end 
+
+    return :sat, assignments
+end
+
+function check_clauses(p, variable, assignments, level; debug=false)
+    for clause_number in p.clause_list[variable]
+        clause = p.clauses[clause_number]
+
+        status, assignments = check_clause(p, assignments, clause, level; debug=debug)
+
+        if status == :unsat 
+            return :unsat, assignments 
+        end
+
+    end
+
+    return :sat, assignments 
+end
+
 """Solve a problem with the given starting assignments
 Starting_clause indicates which clauses have already been processed.
 """
-function raw_solve(p, assignments, starting_clause=1, level=1; debug=false)
+function raw_solve(p, assignments, level=1; debug=false)
     
     if debug
         println()
         indent(level)
-        @show count(>=(0), assignments), assignments, starting_clause
+        @show count(>=(0), assignments), assignments
     end
 
-    # Choose next variable from shortest clause
 
-    for clause in @view p.clauses[starting_clause:end]
+    if count(>=(0), assignments) == length(assignments)  # all satisfied
+        return (:sat, assignments)
+    end 
 
-        if debug
-            indent(level)
-            @show clause
-        end
+    
+    variable = findfirst(<(0), assignments)  # choose next unassigned variable
 
-        status, literal = find_assignment(clause, assignments)
+    # variable = level
 
-        if status == :unsat
-            if debug 
-                indent(level)
-                println("Clause $clause unsat")
-            end
-            return :unsat, assignments
+    assignments[variable] = true
+
+    status, assignments = check_clauses(p, variable, assignments, level; debug=debug)
+
+    if !(status == :unsat)
+        status1, assignments1 = raw_solve(p, assignments, level+1, debug=debug)
         
-        elseif status == :sat 
-            starting_clause += 1
-            continue
-        end
-        
-
-        # unassigned so try both possibilities for that variable
-        
-        variable = value(literal)   # variable number
-        truthiness = truth_value(literal)
-
-        if debug 
-            indent(level)
-            println("Assigning $literal")
-        end
-
-        assignments[variable] = truthiness
-        status1, assignments1 = raw_solve(p, assignments, starting_clause, level+1, debug=debug)
-
         if status1 == :sat 
-            return status1, assignments1
-        end
- 
-        assignments[variable] = 1 - truthiness
-        status2, assignments2 = raw_solve(p, assignments, starting_clause, level+1, debug=debug)
-
-        if status2 == :sat 
-            return status2, assignments2 
-        end
-
-        if debug
-            indent(level)
-            println("Clause $clause unsat")
-        end
-
-        # If here then neither value of the current variable is satisfiable
-        assignments[variable] = -1  # unassign
-        return :unsat, assignments
+            return status1, assignments1 
+        end 
     end
 
-    return :sat, assignments
 
+    assignments[variable] = false
+
+    status, assignments = check_clauses(p, variable, assignments, level; debug=debug)
+
+    if !(status == :unsat)
+        status2, assignments2 = raw_solve(p, assignments, level+1, debug=debug)
+        
+        if status2 == :sat 
+            return status2, assignments2
+        end 
+    end
+
+    assignments[variable] = -1 
+
+    return :unsat, assignments 
 end
 
 
 end
-
 
 
