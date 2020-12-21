@@ -11,6 +11,15 @@ end
 
 # SimpleSAT() = SimpleSAT(false)
 
+struct Action
+    type::Symbol
+    literal::Int 
+end
+
+const actions = Action[]
+
+
+
 # TODO: When a new variable is assigned, check that no clauses are violated
 
 # TODO: Unit propagation
@@ -65,6 +74,11 @@ value(literal) = abs(literal)
 
 is_unassigned(assignments, i) = assignments[i] < 0
 
+num_assigned(assignments) = count(>=(0), assignments)
+
+unassign!(assignments, variable) = assignments[variable] = -1
+
+make_literal(variable, truthiness) = truthiness == 1 ? variable : -variable
 """
 Process a clause to check sat or find next unassigned variable
 `assignments` has -1 if unassigned, 0 or 1 if assigned and false/true respectively
@@ -72,12 +86,18 @@ Process a clause to check sat or find next unassigned variable
 Clause looks like [1, 3, -25]
 """
 function process(clause, assignments)
+    # assumes that clause is processed only if there can be 
+    # at most one unassigned literal
+
+    unassigned_literal = 0
+
     for literal in clause
         
         variable = value(literal)  # which variable number
 
         if is_unassigned(assignments, variable)  # not assigned
-            return :unassigned, literal
+            unassigned_literal = literal
+            continue
         end
 
         # if any literals in the clause have a value which is already assigned, 
@@ -87,7 +107,11 @@ function process(clause, assignments)
         end
     end
 
-    # no literals are satisfiable, hence the clause is unsatisfiable
+    if unassigned_literal != 0
+        # there is a single unassigned literal
+        return :unassigned, unassigned_literal
+    end
+
     return :unsat, -1
 
 end
@@ -99,7 +123,30 @@ the current set of assignments
 """
 
 indent(level) = print(" " ^ level)
+indent(level, s) = (indent(level); println(s))
 
+function assign!(p, assignments, literal, level; debug=false)
+    variable = value(literal)
+    assignments[variable] = truth_value(literal)
+
+    if debug
+        indent(level)
+        println("Forcing $literal")
+        indent(level)
+        @show assignments
+    end
+
+    status, assignments = check_clauses(p, variable, assignments, level; debug=debug)
+        
+    if status == :unsat 
+        unassign!(assignments, variable)
+
+        if debug
+            indent(level)
+            println("Deassigned $variable")
+        end
+
+    end
 
 function check_clause(p, assignments, clause, level; kw...)
 
@@ -119,16 +166,49 @@ function check_clause(p, assignments, clause, level; kw...)
         return :unsat, assignments 
     end 
 
+    # if status == :unassigned 
+
+    #     if debug 
+    #         indent(level)
+    #         println("Unit propagation found $literal")
+    #     end
+
+    #     status, assignments = assign!(p, assignments, literal, level; debug=debug)
+
+    #     if status == :unsat 
+    #         indent(level)
+    #         println("HERE: Unassigning $literal")
+    #         unassign!(assignments, value(literal))
+    #         indent(level)
+    #         print("Assignments now $assignments")
+    #         return status, assignments
+    #     end
+    # end
+
     return :sat, assignments
 end
 
+"Check if clauses containing variable are satisfied"
 function check_clauses(p, variable, assignments, level; kw...)
+
+    # @info "check_clauses with variable $variable"
+
+    currently_assigned = num_assigned(assignments)
+
     for clause_number in p.clause_list[variable]
         clause = p.clauses[clause_number]
+        
+        # println("Processing clause number $clause_number: $clause")
+
+        if length(clause) >= currently_assigned + 2
+            # can't prove (un)satisfiable
+            continue 
+        end
 
         status, assignments = check_clause(p, assignments, clause, level; kw...)
 
         if status == :unsat 
+            # unassign!(assignments, variable)
             return :unsat, assignments 
         end
 
@@ -145,6 +225,8 @@ function raw_solve(p, assignments, level=1; kw...)
     if kw[:debug]
         println()
         indent(level)
+        println("Entering raw_solve")
+        indent(level)
         @show count(>=(0), assignments), assignments
     end
 
@@ -158,7 +240,17 @@ function raw_solve(p, assignments, level=1; kw...)
 
     # variable = level
 
-    assignments[variable] = true
+    # status, assignments = assign!(p, assignments, make_literal(variable, 1), level; debug=debug)
+
+    assignments[variable] = 1
+
+    if debug
+        indent(level)
+        println("Assigning $variable=true")
+        indent(level)
+        @show assignments
+    end
+    
 
     status, assignments = check_clauses(p, variable, assignments, level; kw...)
 
@@ -170,8 +262,19 @@ function raw_solve(p, assignments, level=1; kw...)
         end 
     end
 
+    # status, assignments = assign!(p, assignments, make_literal(variable, 0), level; debug=debug)
 
-    assignments[variable] = false
+
+
+    assignments[variable] = 0
+
+    if debug
+        indent(level)
+        println("Assigning $variable=false")
+        indent(level)
+        @show assignments
+    end
+
 
     status, assignments = check_clauses(p, variable, assignments, level; kw...)
 
@@ -183,7 +286,8 @@ function raw_solve(p, assignments, level=1; kw...)
         end 
     end
 
-    assignments[variable] = -1 
+    
+    unassign!(assignments, variable)
 
     return :unsat, assignments 
 end
