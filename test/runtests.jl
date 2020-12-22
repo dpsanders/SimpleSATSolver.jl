@@ -1,23 +1,15 @@
 using SimpleSATSolver
 using Test
 
-"Check that the result satisfies the clauses"
-function satisfies(clause::Vector{Int}, results)
-    return any(x -> results[abs(x)] == x, clause)
-end
-
-function satisfies(p, results)
-    return all(satisfies.(p.clauses, Ref(results)))
-end
 
 function is_sat(p::SATProblem)
-    status, results = solve(p)
+    status, results = solve(p, SimpleSAT())
 
     return status == :sat && satisfies(p, results)
 end
 
 function is_unsat(p::SATProblem)
-    status, results = solve(p)
+    status, results = solve(p, SimpleSAT())
 
     return status == :unsat
 end
