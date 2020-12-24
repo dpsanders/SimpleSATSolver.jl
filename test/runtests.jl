@@ -1,4 +1,6 @@
+using SatisfiabilityInterface
 using SimpleSATSolver
+
 using Test
 
 
