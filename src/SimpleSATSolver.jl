@@ -1,6 +1,15 @@
 module SimpleSATSolver
 
-export SATProblem, solve
+export SimpleSAT
+
+import SatisfiabilityInterface: AbstractSATSolver, SATProblem, solve
+
+
+
+struct SimpleSAT <: AbstractSATSolver 
+end 
+
+# SimpleSAT() = SimpleSAT(false)
 
 # TODO: When a new variable is assigned, check that no clauses are violated
 
@@ -9,21 +18,18 @@ export SATProblem, solve
 """Boolean satisfiability problem in CNF form.
 `contains[i]` is a list of the clauses containing variable `i`.
 """
-struct SATProblem
+struct StructuredSATProblem
     num_variables::Int
     clauses::Vector{Vector{Int}} 
     clause_list::Vector{Vector{Int}}
 end
 
-max_var(clause) = maximum(abs, clause)
-
-function SATProblem(clauses::Vector{Vector{Int}})
-    num_variables = maximum(max_var, clauses)
+function StructuredSATProblem(p::SATProblem)
     
-    clauses = sort(clauses, by=length)
-    clause_list = list_clauses(num_variables, clauses)
+    clauses = sort(p.clauses, by=length)
+    clause_list = list_clauses(p.num_variables, clauses)
 
-    return SATProblem(num_variables, clauses, clause_list)
+    return StructuredSATProblem(p.num_variables, clauses, clause_list)
 end
 
 "Which clauses contain each variable"
@@ -40,8 +46,11 @@ function list_clauses(num_variables, clauses::Vector{Vector{Int}})
 end
 
 
-function solve(p::SATProblem; debug=false)
-    status, results = raw_solve(p, fill(-1, p.num_variables), debug=debug)
+solve(p::SATProblem, solver::SimpleSAT; kw...) = 
+    solve(StructuredSATProblem(p), solver; kw...)
+
+function solve(p::StructuredSATProblem, solver::SimpleSAT; kw...)
+    status, results = raw_solve(p, fill(-1, p.num_variables); kw...)
 
     if status == :unsat
         return :unsat, Int[]
@@ -92,9 +101,9 @@ the current set of assignments
 indent(level) = print(" " ^ level)
 
 
-function check_clause(p, assignments, clause, level; debug=false)
+function check_clause(p, assignments, clause, level; kw...)
 
-    if debug
+    if kw[:debug]
         indent(level)
         @show clause
     end
@@ -102,7 +111,7 @@ function check_clause(p, assignments, clause, level; debug=false)
     status, literal = process(clause, assignments)
 
     if status == :unsat
-        if debug 
+        if kw[:debug]
             indent(level)
             println("Clause $clause unsat")
         end
@@ -113,11 +122,11 @@ function check_clause(p, assignments, clause, level; debug=false)
     return :sat, assignments
 end
 
-function check_clauses(p, variable, assignments, level; debug=false)
+function check_clauses(p, variable, assignments, level; kw...)
     for clause_number in p.clause_list[variable]
         clause = p.clauses[clause_number]
 
-        status, assignments = check_clause(p, assignments, clause, level; debug=debug)
+        status, assignments = check_clause(p, assignments, clause, level; kw...)
 
         if status == :unsat 
             return :unsat, assignments 
@@ -131,9 +140,9 @@ end
 """Solve a problem with the given starting assignments
 Starting_clause indicates which clauses have already been processed.
 """
-function raw_solve(p, assignments, level=1; debug=false)
+function raw_solve(p, assignments, level=1; kw...)
     
-    if debug
+    if kw[:debug]
         println()
         indent(level)
         @show count(>=(0), assignments), assignments
@@ -151,10 +160,10 @@ function raw_solve(p, assignments, level=1; debug=false)
 
     assignments[variable] = true
 
-    status, assignments = check_clauses(p, variable, assignments, level; debug=debug)
+    status, assignments = check_clauses(p, variable, assignments, level; kw...)
 
     if !(status == :unsat)
-        status1, assignments1 = raw_solve(p, assignments, level+1, debug=debug)
+        status1, assignments1 = raw_solve(p, assignments, level+1; kw...)
         
         if status1 == :sat 
             return status1, assignments1 
@@ -164,10 +173,10 @@ function raw_solve(p, assignments, level=1; debug=false)
 
     assignments[variable] = false
 
-    status, assignments = check_clauses(p, variable, assignments, level; debug=debug)
+    status, assignments = check_clauses(p, variable, assignments, level; kw...)
 
     if !(status == :unsat)
-        status2, assignments2 = raw_solve(p, assignments, level+1, debug=debug)
+        status2, assignments2 = raw_solve(p, assignments, level+1; kw...)
         
         if status2 == :sat 
             return status2, assignments2
