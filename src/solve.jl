@@ -6,11 +6,16 @@
 
 # assignments are like [1, -2, 3, -4]
 
+debug(kw) = haskey(kw, :debug) && debug(kw)
+
+
 const unassigned = 0
 
 index(literal) = abs(literal)   # which variable a literal is: index(-3) == 3
 is_unassigned(literal) = literal == unassigned
 is_assigned(literal) = literal != unassigned
+
+make_literal(variable, sign) = copysign(variable, sign)
 
 """
 Process a clause to check sat or find next unassigned variable
@@ -51,7 +56,7 @@ indent(level) = print(" " ^ level)
 
 function check_clause(p, assignments, clause, level; kw...)
 
-    if kw[:debug]
+    if debug(kw)
         indent(level)
         @show clause
     end
@@ -59,7 +64,7 @@ function check_clause(p, assignments, clause, level; kw...)
     status, literal = process(clause, assignments)
 
     if status == :unsat
-        if kw[:debug]
+        if debug(kw)
             indent(level)
             println("Clause $clause unsat")
         end
@@ -90,7 +95,7 @@ Starting_clause indicates which clauses have already been processed.
 """
 function raw_solve(p, assignments, level=1; kw...)
     
-    if kw[:debug]
+    if debug(kw)
         println()
         indent(level)
         @show count(is_assigned, assignments), assignments
@@ -106,7 +111,7 @@ function raw_solve(p, assignments, level=1; kw...)
 
     # variable = level
 
-    literal = variable
+    literal = make_literal(variable, 1)
     assignments[variable] = literal
 
     status, assignments = check_clauses(p, variable, assignments, level; kw...)
@@ -120,7 +125,7 @@ function raw_solve(p, assignments, level=1; kw...)
     end
 
 
-    literal = -variable
+    literal = make_literal(variable, -1)
     assignments[variable] = literal
 
     status, assignments = check_clauses(p, variable, assignments, level; kw...)
