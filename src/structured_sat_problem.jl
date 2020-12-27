@@ -38,6 +38,9 @@ solve(p::SATProblem, solver::SimpleSAT; kw...) =
 
     
 function solve(p::StructuredSATProblem, solver::SimpleSAT; kw...)
+
+    empty!(action_list)
+
     status, results = raw_solve(p, fill(unassigned, p.num_variables); kw...)
 
     if status == :unsat

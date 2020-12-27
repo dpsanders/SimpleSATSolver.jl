@@ -15,18 +15,21 @@ index(literal) = abs(literal)   # which variable a literal is: index(-3) == 3
 is_unassigned(literal) = literal == unassigned
 is_assigned(literal) = literal != unassigned
 
+is_positive(literal) = literal > 0
+
 make_literal(variable, sign) = copysign(variable, sign)
 
 
 struct Action 
     action::Symbol 
-    variable::Int
+    literal::Int
 end
 
 Base.show(io::IO, action::Action) = 
-    println(io, "$(action.action): $(action.variable)")
+    println(io, "$(action.action): $(action.literal)")
 
 const action_list = Action[]
+sizehint!(action_list, 1000)
 
 
 
@@ -171,3 +174,88 @@ function raw_solve(p, assignments, level=1; kw...)
 end
 
 
+function select_variable(assignments)
+
+    ## random choice:
+    # possible = (1:length(assignments))[is_unassigned.(assignments)]
+    # return rand(possible)
+    
+    ## first available:
+    variable = findfirst(is_unassigned, assignments)
+
+end
+
+
+iterative_solve(p; kw...) = 
+    iterative_solve(StructuredSATProblem(p), fill(unassigned, p.num_variables; kw...))
+
+function iterative_solve(p, assignments, level=1; kw...)
+    
+    empty!(action_list)
+   
+    backtrack = false
+
+    counter = 0
+
+    while true
+        # counter += 1
+
+        if debug(kw)
+            @show action_list 
+            @show assignments
+        end
+
+        if !backtrack
+
+            if count(is_assigned, assignments) == p.num_variables
+                return :sat, assignments
+            end
+
+            variable = select_variable(assignments)
+
+            push!(action_list, Action(:assign, variable))
+            assignments[variable] = make_literal(variable, 1)
+
+            status, assignments = check_clauses(p, variable, assignments, level; kw...)
+
+            if status == :unsat 
+                backtrack = true 
+            end
+            
+        else # backtrack 
+            if debug(kw)
+                @info "Backtracking..."
+            end
+
+            if isempty(action_list)
+                break
+            end
+
+            action = pop!(action_list)
+            literal = action.literal
+
+            variable = index(literal)
+
+            if is_positive(literal)
+
+                literal = make_literal(variable, -1)
+                push!(action_list, Action(:assign, literal))
+                assignments[variable] = literal
+    
+                status, assignments = check_clauses(p, variable, assignments, level; kw...)
+    
+                if status == :sat 
+                    backtrack = false 
+                end
+            
+            else
+                assignments[variable] = unassigned
+            end
+
+        end
+
+    end
+
+    return :unsat, assignments
+
+end
