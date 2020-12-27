@@ -6,7 +6,7 @@
 
 # assignments are like [1, -2, 3, -4]
 
-debug(kw) = haskey(kw, :debug) && debug(kw)
+debug(kw) = haskey(kw, :debug) && kw[:debug]
 
 
 const unassigned = 0
@@ -90,6 +90,29 @@ function check_clauses(p, variable, assignments, level; kw...)
     return :sat, assignments 
 end
 
+function assign!(p, assignments, literal, level; kw...)
+
+    # @show literal
+    variable = index(literal)
+    assignments[variable] = literal
+
+    status, assignments = check_clauses(p, variable, assignments, level; kw...)
+
+    if !(status == :unsat)
+        status, assignments = raw_solve(p, assignments, level+1; kw...)
+        
+        if status == :sat 
+            return status, assignments
+        end 
+    end
+
+    assignments[variable] = unassigned
+
+    return status, assignments
+
+end
+
+
 """Solve a problem with the given starting assignments
 Starting_clause indicates which clauses have already been processed.
 """
@@ -109,39 +132,20 @@ function raw_solve(p, assignments, level=1; kw...)
     
     variable = findfirst(is_unassigned, assignments)  # choose next unassigned variable
 
-    # variable = level
 
-    literal = make_literal(variable, 1)
-    assignments[variable] = literal
+    literal = make_literal(variable, 1)  # true
+    status, assignments = assign!(p, assignments, literal, level+1; kw...)
 
-    status, assignments = check_clauses(p, variable, assignments, level; kw...)
-
-    if !(status == :unsat)
-        status, assignments = raw_solve(p, assignments, level+1; kw...)
-        
-        if status == :sat 
-            return status, assignments
-        end 
-    end
+    if status == :sat 
+        return status, assignments
+    end 
 
 
-    literal = make_literal(variable, -1)
-    assignments[variable] = literal
+    literal = make_literal(variable, -1)  # false
+    status, assignments = assign!(p, assignments, literal, level+1; kw...)
 
-    status, assignments = check_clauses(p, variable, assignments, level; kw...)
+    return status, assignments
 
-    if !(status == :unsat)
-        status, assignments = raw_solve(p, assignments, level+1; kw...)
-        
-        if status == :sat 
-            return status, assignments
-        end 
-    end
-
-    
-    assignments[variable] = unassigned
-
-    return :unsat, assignments 
 end
 
 
