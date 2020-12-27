@@ -17,6 +17,19 @@ is_assigned(literal) = literal != unassigned
 
 make_literal(variable, sign) = copysign(variable, sign)
 
+
+struct Action 
+    action::Symbol 
+    variable::Int
+end
+
+Base.show(io::IO, action::Action) = 
+    println(io, "$(action.action): $(action.variable)")
+
+const action_list = Action[]
+
+
+
 """
 Process a clause to check sat or find next unassigned variable
 `assignments` has -1 if unassigned, 0 or 1 if assigned and false/true respectively
@@ -96,6 +109,13 @@ function assign!(p, assignments, literal, level; kw...)
     variable = index(literal)
     assignments[variable] = literal
 
+    push!(action_list, Action(:assign, literal))
+
+    if debug(kw)
+        @show action_list
+        @show assignments
+    end
+
     status, assignments = check_clauses(p, variable, assignments, level; kw...)
 
     if !(status == :unsat)
@@ -107,6 +127,8 @@ function assign!(p, assignments, literal, level; kw...)
     end
 
     assignments[variable] = unassigned
+
+    pop!(action_list)
 
     return status, assignments
 
