@@ -15,18 +15,26 @@ index(literal) = abs(literal)   # which variable a literal is: index(-3) == 3
 is_unassigned(literal) = literal == unassigned
 is_assigned(literal) = literal != unassigned
 
+is_positive(literal) = literal > 0
+
 make_literal(variable, sign) = copysign(variable, sign)
 
+num_assigned(assignments) = count(is_assigned, assignments)
 
 struct Action 
     action::Symbol 
-    variable::Int
+    literal::Int
 end
 
 Base.show(io::IO, action::Action) = 
-    println(io, "$(action.action): $(action.variable)")
+    print(io, "$(String(action.action)[1]):$(action.literal)")
 
-const action_list = Action[]
+const actions = Action[]
+sizehint!(actions, 1000)
+
+const assignments = Int[]
+
+const unit_literals = Int[]
 
 
 
@@ -35,22 +43,43 @@ Process a clause to check sat or find next unassigned variable
 `assignments` has -1 if unassigned, 0 or 1 if assigned and false/true respectively
 
 Clause looks like [1, 3, -25]
+
+Returns :sat if the clause is not falsified, :unsat if it is falsified,
+:unit if it found a single unassigned literal (i.e. a unit literal)
+
+This assumes that there are no clauses with both x and ¬x in
+
+TODO: Deal with x ∨ ¬x clauses in pre-processing
 """
-function process(clause, assignments)
+function process(clause)
+
+    unit_literal = 0
+
     for literal in clause
         
         variable = index(literal)  
+        current = assignments[variable]
 
-        current_value = assignments[variable]
+        if is_unassigned(current)
+            
+            if unit_literal != 0   # already found a previous unit literal in the clause
+                return :sat, -1  # > 1 literal unassigned in clause, so not falsified 
+            end
 
-        if is_unassigned(current_value)  
-            return :unassigned, literal
-        end
+            unit_literal = literal
+
+              # return :unassigned, literal
+         end
 
         # if any literal in clause has correct value, then clause is satisfiable 
-        if current_value == literal
+        if current == literal
             return :sat, -1
         end
+    end
+
+    # exactly one is unassigned
+    if unit_literal != 0
+        return :unit, unit_literal 
     end
 
     # no literals are satisfiable, hence the clause is unsatisfiable
@@ -58,116 +87,231 @@ function process(clause, assignments)
 
 end
 
+
+
+indent(level) = print(" " ^ level)
+
+
+
+function check_clauses(p, variable; kw...)
+    for clause_number in p.clause_list[variable]
+        clause = p.clauses[clause_number]
+
+        status, literal = process(clause)
+
+        # if variable == 12
+        #     @show clause, status, literal
+        # end
+
+        if status == :unit
+            push!(unit_literals, literal)
+        end
+
+        if status == :unsat 
+            return :unsat, clause 
+        end
+
+    end
+
+    return :sat, Int[]
+end
+
+"Unassign actions back to given literal"
+function unassign!(original_literal)
+    while true 
+        action = actions[end]
+        literal = action.literal
+
+        if literal == original_literal 
+            # finished
+            return
+        end
+
+        variable = index(literal)
+        assignments[variable] = unassigned
+
+        pop!(actions)  # remove the action we just processed
+
+    end
+
+
+end
+
+"""Do unit propagation for the literals implied by `original_literal`.
+These were previously collected by `check_clauses`.
+"""
+function unit_propagation(p, original_literal; kw...)
+
+    if isempty(unit_literals)
+        return 
+    end
+
+    status = :sat
+
+    if debug(kw)
+        @info "Doing unit prop"
+        @show assignments
+        @show original_literal
+    end
+
+    while !isempty(unit_literals)
+
+        literal = popfirst!(unit_literals)
+        variable = index(literal)
+        push!(actions, Action(:unitprop, literal))
+
+        assignments[variable] = literal
+
+        status, clause = check_clauses(p, variable; kw...)
+
+        if status == :unsat 
+            if debug(kw) 
+                @info "Unsat: ", clause
+            end
+            break 
+        end
+
+        # no clauses were falsified
+
+    end
+
+    if status == :unsat 
+        unassign!(original_literal)  
+    end
+
+    empty!(unit_literals)
+
+    return status
+end
+
+function assign!(p, literal; kw...)
+
+    variable = index(literal)
+
+    push!(actions, Action(:assign, literal))
+    assignments[variable] = literal
+
+    status, clause = check_clauses(p, variable; kw...)
+
+    if status == :unsat 
+
+        if debug(kw)
+            @info "Unsat clause: ", clause 
+        end
+            
+        empty!(unit_literals)
+        return :unsat
+    end
+
+    status = unit_propagation(p, literal; kw...)  # remove this line to remove unit prop
+
+    return status
+
+end
+
+
+function select_variable(assignments)
+
+    ## random choice:
+    # possible = (1:length(assignments))[is_unassigned.(assignments)]
+    # return rand(possible)
+    
+    ## first available:
+    variable = findfirst(is_unassigned, assignments)
+end
+
+
+iterative_solve(p; kw...) = 
+    iterative_solve(StructuredSATProblem(p); kw...)
+
 """Solve a SAT problem by tree search.
 - `assignments` specifies if each variable is unassigned (-1) or assigned with index false (0) or true (1)
 - `starting_clause` says which clauses can be skipped since they are satisfied by
 the current set of assignments 
 """
+function iterative_solve(p::StructuredSATProblem; kw...)
+    
+    empty!(actions)
+    empty!(assignments)
 
-indent(level) = print(" " ^ level)
+    append!(assignments, fill(unassigned, p.num_variables))
 
+   
+    backtrack = false
 
-function check_clause(p, assignments, clause, level; kw...)
+    while true
 
-    if debug(kw)
-        indent(level)
-        @show clause
-    end
-
-    status, literal = process(clause, assignments)
-
-    if status == :unsat
         if debug(kw)
-            indent(level)
-            println("Clause $clause unsat")
-        end
-                
-        return :unsat, assignments 
-    end 
+            # decisions = filter(x -> x.action == :assign, actions)
+            # @show decisions
 
-    return :sat, assignments
-end
+            @show actions
 
-function check_clauses(p, variable, assignments, level; kw...)
-    for clause_number in p.clause_list[variable]
-        clause = p.clauses[clause_number]
-
-        status, assignments = check_clause(p, assignments, clause, level; kw...)
-
-        if status == :unsat 
-            return :unsat, assignments 
+            assigned = filter(is_assigned, assignments)
+            @show assigned
         end
 
+        if !backtrack
+
+            if num_assigned(assignments) == p.num_variables
+                # finished!
+                return :sat, assignments
+            end
+
+            # choose and assign a new variable:
+            variable = select_variable(assignments)
+            literal = make_literal(variable, 1)
+
+            status = assign!(p, literal; kw...) 
+
+            if status == :unsat 
+                backtrack = true 
+            end
+            
+        else # backtrack 
+            if debug(kw)
+                @info "Backtracking..."
+            end
+
+            if isempty(actions)
+                # @error "Action list empty -- should not happen"
+                break
+            end
+
+            # undo the last action
+            action = pop!(actions)
+
+            if action.action == :unitprop   # keep undoing unit props
+                variable = index(action.literal)
+                assignments[variable] = unassigned
+                continue
+            end
+
+
+            literal = action.literal
+
+            variable = index(literal)
+
+            if is_positive(literal)
+                # switch positive to negative and try again
+                literal = make_literal(variable, -1)
+
+                status = assign!(p, literal; kw...) 
+
+                if status == :sat 
+                   backtrack = false  # stop backtracking
+                end
+            
+            else
+                # neither assignment to variable worked
+                # keep backtracking
+                assignments[variable] = unassigned
+            end
+
+        end
+
     end
 
-    return :sat, assignments 
-end
-
-function assign!(p, assignments, literal, level; kw...)
-
-    # @show literal
-    variable = index(literal)
-    assignments[variable] = literal
-
-    push!(action_list, Action(:assign, literal))
-
-    if debug(kw)
-        @show action_list
-        @show assignments
-    end
-
-    status, assignments = check_clauses(p, variable, assignments, level; kw...)
-
-    if !(status == :unsat)
-        status, assignments = raw_solve(p, assignments, level+1; kw...)
-        
-        if status == :sat 
-            return status, assignments
-        end 
-    end
-
-    assignments[variable] = unassigned
-
-    pop!(action_list)
-
-    return status, assignments
-
-end
-
-
-"""Solve a problem with the given starting assignments
-Starting_clause indicates which clauses have already been processed.
-"""
-function raw_solve(p, assignments, level=1; kw...)
-    
-    if debug(kw)
-        println()
-        indent(level)
-        @show count(is_assigned, assignments), assignments
-    end
-
-
-    if count(is_assigned, assignments) == length(assignments)  # all satisfied
-        return (:sat, assignments)
-    end 
-
-    
-    variable = findfirst(is_unassigned, assignments)  # choose next unassigned variable
-
-
-    literal = make_literal(variable, 1)  # true
-    status, assignments = assign!(p, assignments, literal, level+1; kw...)
-
-    if status == :sat 
-        return status, assignments
-    end 
-
-
-    literal = make_literal(variable, -1)  # false
-    status, assignments = assign!(p, assignments, literal, level+1; kw...)
-
-    return status, assignments
+    return :unsat, assignments
 
 end
-
-

@@ -1,6 +1,6 @@
 module SimpleSATSolver
 
-export SimpleSAT
+export SimpleSAT, iterative_solve
 
 import SatisfiabilityInterface: AbstractSATSolver, SATProblem, solve
 
