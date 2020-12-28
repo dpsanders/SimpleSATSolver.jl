@@ -274,7 +274,7 @@ function iterative_solve(p::StructuredSATProblem; kw...)
             end
 
             if isempty(actions)
-                @error "Action list empty -- should not happen"
+                # @error "Action list empty -- should not happen"
                 break
             end
 
