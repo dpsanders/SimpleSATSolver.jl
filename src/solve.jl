@@ -4,9 +4,10 @@
 # Literals look like 3, i.e. x₃ or -25, i.e. ¬x₂₅
 # truth_index(literal) = Int(literal > 0)  # positive is true, negative is false
 
-# assignments are like [1, -2, 3, -4]
+# assignment are like [1, -2, 3, -4]
 
 debug(kw) = haskey(kw, :debug) && kw[:debug]
+unitprop(kw) = haskey(kw, :unitprop) && kw[:unitprop]
 
 
 const unassigned = 0
@@ -19,28 +20,14 @@ is_positive(literal) = literal > 0
 
 make_literal(variable, sign) = copysign(variable, sign)
 
-num_assigned(assignments) = count(is_assigned, assignments)
+num_assigned(assignment) = count(is_assigned, assignment)
 
-struct Action 
-    action::Symbol 
-    literal::Int
-end
-
-Base.show(io::IO, action::Action) = 
-    print(io, "$(String(action.action)[1]):$(action.literal)")
-
-const actions = Action[]
-sizehint!(actions, 1000)
-
-const assignments = Int[]
-
-const unit_literals = Int[]
 
 
 
 """
 Process a clause to check sat or find next unassigned variable
-`assignments` has -1 if unassigned, 0 or 1 if assigned and false/true respectively
+`assignment` has -1 if unassigned, 0 or 1 if assigned and false/true respectively
 
 Clause looks like [1, 3, -25]
 
@@ -58,7 +45,7 @@ function process(clause)
     for literal in clause
         
         variable = index(literal)  
-        current = assignments[variable]
+        current = assignment[variable]
 
         if is_unassigned(current)
             
@@ -128,7 +115,7 @@ function unassign!(original_literal)
         end
 
         variable = index(literal)
-        assignments[variable] = unassigned
+        assignment[variable] = unassigned
 
         pop!(actions)  # remove the action we just processed
 
@@ -150,7 +137,7 @@ function unit_propagation(p, original_literal; kw...)
 
     if debug(kw)
         @info "Doing unit prop"
-        @show assignments
+        @show assignment
         @show original_literal
     end
 
@@ -160,7 +147,7 @@ function unit_propagation(p, original_literal; kw...)
         variable = index(literal)
         push!(actions, Action(:unitprop, literal))
 
-        assignments[variable] = literal
+        assignment[variable] = literal
 
         status, clause = check_clauses(p, variable; kw...)
 
@@ -189,7 +176,7 @@ function assign!(p, literal; kw...)
     variable = index(literal)
 
     push!(actions, Action(:assign, literal))
-    assignments[variable] = literal
+    assignment[variable] = literal
 
     status, clause = check_clauses(p, variable; kw...)
 
@@ -203,39 +190,34 @@ function assign!(p, literal; kw...)
         return :unsat
     end
 
-    status = unit_propagation(p, literal; kw...)  # remove this line to remove unit prop
+    if unitprop(kw)
+        status = unit_propagation(p, literal; kw...)  # remove this line to remove unit prop
+    end
 
     return status
 
 end
 
 
-function select_variable(assignments)
+function select_variable(assignment)
 
     ## random choice:
-    # possible = (1:length(assignments))[is_unassigned.(assignments)]
+    # possible = [i for i in 1:length(assignment) if is_unassigned(assignment[i])]
     # return rand(possible)
     
     ## first available:
-    variable = findfirst(is_unassigned, assignments)
+    variable = findfirst(is_unassigned, assignment)
 end
 
 
-iterative_solve(p; kw...) = 
-    iterative_solve(StructuredSATProblem(p); kw...)
-
 """Solve a SAT problem by tree search.
-- `assignments` specifies if each variable is unassigned (-1) or assigned with index false (0) or true (1)
+- Global variable `assignment` specifies if each variable is unassigned (-1) or assigned with index false (0) or true (1)
 - `starting_clause` says which clauses can be skipped since they are satisfied by
-the current set of assignments 
+the current set of assignment 
 """
 function iterative_solve(p::StructuredSATProblem; kw...)
     
     empty!(actions)
-    empty!(assignments)
-
-    append!(assignments, fill(unassigned, p.num_variables))
-
    
     backtrack = false
 
@@ -247,19 +229,19 @@ function iterative_solve(p::StructuredSATProblem; kw...)
 
             @show actions
 
-            assigned = filter(is_assigned, assignments)
+            assigned = filter(is_assigned, assignment)
             @show assigned
         end
 
         if !backtrack
 
-            if num_assigned(assignments) == p.num_variables
+            if num_assigned(assignment) == p.num_variables
                 # finished!
-                return :sat, assignments
+                return :sat, assignment
             end
 
             # choose and assign a new variable:
-            variable = select_variable(assignments)
+            variable = select_variable(assignment)
             literal = make_literal(variable, 1)
 
             status = assign!(p, literal; kw...) 
@@ -283,7 +265,7 @@ function iterative_solve(p::StructuredSATProblem; kw...)
 
             if action.action == :unitprop   # keep undoing unit props
                 variable = index(action.literal)
-                assignments[variable] = unassigned
+                assignment[variable] = unassigned
                 continue
             end
 
@@ -305,13 +287,14 @@ function iterative_solve(p::StructuredSATProblem; kw...)
             else
                 # neither assignment to variable worked
                 # keep backtracking
-                assignments[variable] = unassigned
+                assignment[variable] = unassigned
             end
 
         end
 
     end
 
-    return :unsat, assignments
+    return :unsat, assignment
 
 end
+
